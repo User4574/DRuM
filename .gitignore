@@ -1,1 +1,3 @@
 *.swp
+example/Gemfile.lock
+example/.drumkit
