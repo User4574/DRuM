@@ -1,0 +1,41 @@
+h1. DRuM: The Docker Ruby Manager
+
+p. This is a TERRIBLE alternative to RVM, that uses docker, because why not.
+
+h2. Use
+
+bc.. cd test
+drum bass
+drum stick sinatra
+drum kick
+drum snare
+drum roll -- -p4567:4567
+
+h2. Bass Drums
+
+p. Just a ruby image of some form. By default, ruby:alpine.
+
+bc.. drum bass
+drum bass slim
+drum bass jruby:
+drum bass ruby:2.6
+
+h2. Kick Drums, and Drum Sticks
+
+p. Drum Sticks are DRuM's built in gem manager. (I should really just use bundler.) A Kick Drum is a Bass Drum with the Drum Sticks installed.
+
+bc.. drum stick sinatra
+drum kick
+
+h2. Snare Drums
+
+p. A Snare Drum is a Kick Drum with your application installed.
+
+bc. drum snare
+
+h2. Drum Rolls
+
+p. This runs the container.
+
+bc.. drum roll
+drum roll -- -p 4567:4567

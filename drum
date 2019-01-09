@@ -1,0 +1,183 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'ostruct'
+require 'tempfile'
+
+OPTIONS = OpenStruct.new({
+  noop: false,
+  verbose: false,
+  drumkit: ".drumkit"
+})
+
+class Drumkit
+  def self.parse_file(filename)
+    Drumkit.parse(File.read(filename))
+  end
+
+  def self.parse(input)
+    input = input.lines if input.is_a?(String)
+    input = input.map(&:strip).reject(&:empty?)
+    drumkit = Drumkit.new(input)
+  end
+
+  def initialize(lines = [])
+    @bassdrum = nil
+    @kickdrum = nil
+    @snaredrum = nil
+    @drumsticks = []
+
+    lines.each do |line|
+      case line
+      when /^BASSDRUM/
+        @bassdrum = line[9..-1]
+      when /^KICKDRUM/
+        @kickdrum = line[9..-1]
+      when /^SNAREDRUM/
+        @snaredrum = line[10..-1]
+      when /^DRUMSTICK/
+        @drumsticks << line[10..-1]
+      end
+    end
+  end
+
+  attr_accessor :bassdrum, :kickdrum, :snaredrum, :drumsticks
+
+  def add_stick(stick)
+    @drumsticks.push(stick)
+  end
+
+  def to_s
+    "This file will be modified automatically. Only make changes if you know what you are doing. Otherwise, use drum.\n\n" +
+    (@bassdrum ? "BASSDRUM #{@bassdrum}\n" : "") +
+    (@kickdrum ? "KICKDRUM #{@kickdrum}\n" : "") +
+    (@snaredrum ? "SNAREDRUM #{@snaredrum}\n" : "") +
+    @drumsticks.map{|s| "DRUMSTICK #{s}"}.join("\n")
+  end
+end
+
+def help(parser)
+  puts parser.banner
+  puts parser.summarize
+end
+
+def info(str)
+  puts "INFO: #{str}"
+end
+
+def error(str, rc = nil)
+  $stderr.puts "ERROR: #{str}"
+  exit rc unless rc.nil?
+end
+
+def entrypoint
+  "./#{File.basename(Dir.pwd)}.rb"
+end
+
+parser = OptionParser.new do |opt|
+  opt.banner = "DRuM: The Docker Ruby Manager\n\nUsage: drum [flags] COMMAND"
+
+  opt.on("-n", "--noop", "--dry-run", "Dry run, don't actually *do* anything") do
+    OPTIONS.noop = true
+    OPTIONS.verbose = true
+  end
+  opt.on("-v", "--verbose", "Explain what's happening") do
+    OPTIONS.verbose = true
+  end
+  opt.on("-d", "--drumkit", :REQUIRED, "Specify drumkit file (default: .drumkit)") do |dk|
+    OPTIONS.drumkit = dk
+  end
+  opt.on("-h", "--help", "Print usage") do
+    help opt
+    exit 0
+  end
+end
+
+parser.parse!
+
+COMMAND = ARGV.shift&.downcase
+
+if File.exists?(OPTIONS.drumkit)
+  DRUMKIT = Drumkit.parse_file(OPTIONS.drumkit)
+else
+  DRUMKIT = Drumkit.new
+end
+
+case COMMAND
+  when nil
+    error "Error: No command given\n\n"
+    help parser
+    exit 1
+  when "bass"
+    if !ARGV[0].nil?
+      bd = ARGV[0].strip
+      case bd
+      when /\A[^:]+\Z/
+        bassdrum = "ruby:#{bd}"
+      when /:\Z/
+        bassdrum = bd[0..-2]
+      when /\w:\w/
+        bassdrum = bd
+      else
+        error("Invalid Bass Drum specification: #{bd}", 1)
+      end
+    else
+      if DRUMKIT.bassdrum.nil?
+        bassdrum = "ruby:alpine"
+      else
+        bassdrum = DRUMKIT.bassdrum
+      end
+    end
+    info "Fetching Bass Drum: #{bassdrum}" if OPTIONS.verbose
+    system "docker pull #{bassdrum}" unless OPTIONS.noop
+    DRUMKIT.bassdrum = bassdrum unless OPTIONS.noop
+  when "kick"
+    error("No Bass Drum specified.", 1) if DRUMKIT.bassdrum.nil?
+    if !ARGV[0].nil?
+      kickdrum = ARGV[0].strip
+    else
+      if DRUMKIT.kickdrum.nil?
+        kickdrum = "drum-bass-#{DRUMKIT.bassdrum.gsub(/:/,"_")}-kick-#{File.basename(Dir.pwd)}"
+      else
+        kickdrum = DRUMKIT.kickdrum
+      end
+    end
+    puts "Building Kick Drum: #{kickdrum}" if OPTIONS.verbose
+    Tempfile.open("drum-tmp-dockerfile", Dir.pwd) do |f|
+      f.puts "FROM #{DRUMKIT.bassdrum}"
+      f.puts "RUN gem install --no-document #{DRUMKIT.drumsticks.join(" ")}"
+      f.flush
+      system "docker build -t #{kickdrum} -f #{File.basename(f)} ."
+    end unless OPTIONS.noop
+    DRUMKIT.kickdrum = kickdrum unless OPTIONS.noop
+  when "snare"
+    error("No Kick Drum specified.", 1) if DRUMKIT.kickdrum.nil?
+    if !ARGV[0].nil?
+      snaredrum = ARGV[0].strip
+    else
+      if DRUMKIT.snaredrum.nil?
+        snaredrum = "#{DRUMKIT.kickdrum}-snare-#{entrypoint.gsub(/[\/.]/, "_")}"
+      else
+        snaredrum = DRUMKIT.snaredrum
+      end
+    end
+    puts "Creating Snare Drum: #{snaredrum}" if OPTIONS.verbose
+    Tempfile.open("drum-tmp-dockerfile", Dir.pwd) do |f|
+      f.puts "FROM #{DRUMKIT.kickdrum}"
+      f.puts "COPY . ."
+      f.puts "ENTRYPOINT [\"#{entrypoint}\"]"
+      f.flush
+      system "docker build -t #{snaredrum} -f #{File.basename(f)} ."
+    end unless OPTIONS.noop
+    DRUMKIT.snaredrum = snaredrum unless OPTIONS.noop
+  when "stick"
+    error("Specify drumstick", 1) if ARGV[0].nil?
+    drumstick = ARGV[0].strip
+    info "Adding Drumstick: #{drumstick}" if OPTIONS.verbose
+    DRUMKIT.add_stick(drumstick) unless OPTIONS.noop
+  when "roll"
+    error("No Snare Drum specified.", 1) if DRUMKIT.snaredrum.nil?
+    system "docker run #{ARGV.join(" ")} #{DRUMKIT.snaredrum}"
+end
+
+File.open(OPTIONS.drumkit, "w").puts(DRUMKIT.to_s)
