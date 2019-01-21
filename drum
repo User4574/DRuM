@@ -6,7 +6,8 @@ require 'tempfile'
 
 OPTIONS = OpenStruct.new({
   noop: false,
-  drumkit: ".drumkit"
+  drumkit: ".drumkit",
+  erase: false
 })
 
 class Drumkit
@@ -24,6 +25,7 @@ class Drumkit
     @bassdrum = nil
     @kickdrum = nil
     @snaredrum = nil
+    @drumstick = nil
 
     lines.each do |line|
       case line
@@ -33,21 +35,20 @@ class Drumkit
         @kickdrum = line[9..-1]
       when /^SNAREDRUM/
         @snaredrum = line[10..-1]
+      when /^DRUMSTICK/
+        @drumstick = line[10..-1].split(" ")
       end
     end
   end
 
-  attr_accessor :bassdrum, :kickdrum, :snaredrum, :drumsticks
-
-  def add_stick(stick)
-    @drumsticks.push(stick)
-  end
+  attr_accessor :bassdrum, :kickdrum, :snaredrum, :drumstick
 
   def to_s
     "This file will be modified automatically. Only make changes if you know what you are doing. Otherwise, use drum.\n\n" +
     (@bassdrum ? "BASSDRUM #{@bassdrum}\n" : "") +
     (@kickdrum ? "KICKDRUM #{@kickdrum}\n" : "") +
-    (@snaredrum ? "SNAREDRUM #{@snaredrum}\n" : "")
+    (@snaredrum ? "SNAREDRUM #{@snaredrum}\n" : "") +
+    (@drumstick ? "DRUMSTICK #{@drumstick.join(" ")}\n" : "")
   end
 end
 
@@ -65,8 +66,29 @@ def error(str, rc = nil)
   exit rc unless rc.nil?
 end
 
-def entrypoint
-  "./#{File.basename(Dir.pwd)}.rb"
+def entrypoint(dk)
+  #0. Is there a stick specified?
+  return dk.drumstick unless dk.drumstick.nil?
+
+  files = Dir.entries(Dir.pwd)
+  #1. Is it a rails app?
+  return ["rails", "server"] if File.exists?("Gemfile") && File.read("Gemfile").downcase =~ /gem "rails"/
+  #2. Is there an executable file with the same name as the working dir?
+  d = File.basename(Dir.pwd)
+  r = /#{d}(\.rb)?/
+  s = files.select{|f|f =~ r}
+  return ["./#{s[0]}"] if s.length == 1 && File.executable?(s[0])
+  #3. Is there only one ruby file?
+  d = /\.rb/
+  s = files.select{|f|f =~ d}
+  return ["./#{s[0]}"] if s.length == 1 && File.executable?(s[0])
+  #4. Is there a file that looks like "entrypoint"
+  r = /entrypoint/
+  s = files.select{|f|f =~ r}.select{|f|File.executable?(f)}
+  return ["./#{s[0]}"] if s.length == 1
+  #5. Is there only one executable file?
+  s = files.select{|f|File.executable?(f)}
+  return ["./#{s[0]}"] if s.length == 1
 end
 
 parser = OptionParser.new do |opt|
@@ -77,6 +99,9 @@ parser = OptionParser.new do |opt|
   end
   opt.on("-d", "--drumkit", :REQUIRED, "Specify drumkit file (default: .drumkit)") do |dk|
     OPTIONS.drumkit = dk
+  end
+  opt.on("--erase", "Erase this drum from the drumkit.") do
+    OPTIONS.erase = true
   end
   opt.on("-h", "--help", "Print usage") do
     help opt
@@ -94,9 +119,29 @@ else
   DRUMKIT = Drumkit.new
 end
 
+if OPTIONS.erase
+  case COMMAND
+    when nil
+      error("No key given to erase", 1)
+    when "bass"
+      DRUMKIT.bassdrum = nil
+    when "kick"
+      DRUMKIT.kickdrum = nil
+    when "snare"
+      DRUMKIT.snaredrum = nil
+    when "stick"
+      DRUMKIT.drumstick = nil
+    else
+      error("Invalid key: \"#{COMMAND}\"", 1)
+  end
+  File.open(OPTIONS.drumkit, "w").puts(DRUMKIT.to_s)
+  info("Key \"#{COMMAND}\" erased")
+  exit 0
+end
+
 case COMMAND
   when nil
-    error "Error: No command given\n\n"
+    error "No command given\n\n"
     help parser
     exit 1
   when "bass"
@@ -132,32 +177,40 @@ case COMMAND
     puts "Building Kick Drum: #{kickdrum}" if OPTIONS.noop
     Tempfile.open("drum-tmp-dockerfile", Dir.pwd) do |f|
       f.puts "FROM #{DRUMKIT.bassdrum}"
+      f.puts "WORKDIR /opt"
       f.puts "COPY Gemfile* ./"
-      f.puts "RUN bundle install"
+      f.puts "RUN [\"bundle\", \"install\"]"
       f.flush
       system "docker build -t #{kickdrum} -f #{File.basename(f)} ."
-      system "docker run #{kickdrum} cat Gemfile.lock > Gemfile.lock"
+      system "docker run --rm #{kickdrum} cat Gemfile.lock > Gemfile.lock"
     end unless OPTIONS.noop
     DRUMKIT.kickdrum = kickdrum unless OPTIONS.noop
   when "snare"
     error("No Kick Drum specified.", 1) if DRUMKIT.kickdrum.nil?
     if DRUMKIT.snaredrum.nil?
-      snaredrum = "#{DRUMKIT.kickdrum}-snare-#{entrypoint.gsub(/[\/.]/, "_")}"
+      snaredrum = "#{DRUMKIT.kickdrum}-snare-#{entrypoint(DRUMKIT).join('_').gsub(/[\/.]/, "_").gsub(/(^[-_.]+|[-_.]+$)/, "")}"
     else
       snaredrum = DRUMKIT.snaredrum
     end
     puts "Creating Snare Drum: #{snaredrum}" if OPTIONS.noop
     Tempfile.open("drum-tmp-dockerfile", Dir.pwd) do |f|
       f.puts "FROM #{DRUMKIT.kickdrum}"
+      f.puts "WORKDIR /opt"
       f.puts "COPY . ."
-      f.puts "ENTRYPOINT [\"#{entrypoint}\"]"
+      f.puts "ENTRYPOINT [\"#{entrypoint(DRUMKIT).join("\", \"")}\"]"
       f.flush
       system "docker build -t #{snaredrum} -f #{File.basename(f)} ."
     end unless OPTIONS.noop
     DRUMKIT.snaredrum = snaredrum unless OPTIONS.noop
   when "roll"
-    error("No Snare Drum specified.", 1) if DRUMKIT.snaredrum.nil?
-    system "docker run #{ARGV.join(" ")} #{DRUMKIT.snaredrum}"
+    error("No Kick Drum specified.", 1) if DRUMKIT.kickdrum.nil?
+    system "docker run --rm -v `pwd`:/opt -w /opt #{ARGV.join(" ")} #{DRUMKIT.kickdrum} #{entrypoint(DRUMKIT).join(" ")}"
+  when "stick"
+    if ARGV[0].nil?
+      puts entrypoint(DRUMKIT).join(" ")
+    else
+      DRUMKIT.drumstick = ARGV unless OPTIONS.noop
+    end
 end
 
 File.open(OPTIONS.drumkit, "w").puts(DRUMKIT.to_s)

@@ -25,15 +25,36 @@ p. A Kick Drum is a Bass Drum with your gems installed.
 
 bc. drum kick
 
-h2. Snare Drums
-
-p. A Snare Drum is a Kick Drum with your application installed.
-
-bc. drum snare
-
 h2. Drum Rolls
 
-p. This runs the container.
+p. This beats on the Kick Drum with your current directory mounted as a volume. For dev.
 
 bc.. drum roll
 drum roll -- -p123:456
+
+h2. Snare Drums
+
+p. A Snare Drum is a Kick Drum with your application fully installed, ready for deployment to production.
+
+bc. drum snare
+
+h2. Drum Stick
+
+p. A Drum Stick is how you beat on the Drum. You needn't actually specify the Drum Stick, drum tries to be clever.
+
+h3. Stick selection
+
+p. Drum will try the following sticks in order, and use the first that matches.
+
+# Is there a manually specified stick?
+# Is it a rails app? (Run rails server)
+# Is there an executable file with the same name as the working directory?
+# Is there only one executable .rb file?
+# Is there only one file that looks like "entrypoint"
+# Is there only one executable file?
+
+h3. Manual Stick
+
+bc. drum stick ./example.rb
+drum stick ruby example.rb
+drum stick rails server
