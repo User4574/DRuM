@@ -7,14 +7,14 @@ h2. Example
 bc.. cd test
 drum bass
 drum kick
-drum snare
 drum roll -- -p4567:4567
+drum snare
 
 h2. Bass Drums
 
 p. Just a ruby image of some form. By default, ruby:alpine.
 
-bc..  drum bass          # ruby:alpine
+bc.. drum bass          # ruby:alpine
 drum bass slim     # Just a tag, ruby:slim
 drum bass jruby:   # Just an image, jruby:latest
 drum bass ruby:2.6 # Image and tag, ruby:2.6
@@ -58,3 +58,4 @@ h3. Manual Stick
 bc. drum stick ./example.rb
 drum stick ruby example.rb
 drum stick rails server
+drum stick                 # Returns what drum will use as the stick
