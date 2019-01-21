@@ -4,10 +4,10 @@ p. This is a TERRIBLE alternative to RVM, that uses docker, because why not. You
 
 h2. Example
 
-bc.. cd test
+bc.. cd example
 drum bass
 drum kick
-drum roll -- -p4567:4567
+drum roll -- -p80:80
 drum snare
 
 h2. Bass Drums
@@ -30,7 +30,7 @@ h2. Drum Rolls
 p. This beats on the Kick Drum with your current directory mounted as a volume. For dev.
 
 bc.. drum roll
-drum roll -- -p123:456
+drum roll -- -p80:80
 
 h2. Snare Drums
 
